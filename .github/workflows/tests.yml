@@ -1,0 +1,263 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  quality:
+    name: Code style and static analysis
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: mbstring, intl, gd, zip, pdo_mysql
+          coverage: none
+
+      - name: Install dependencies
+        run: composer update --prefer-dist --no-interaction --no-progress
+
+      - name: Code style (ECS, craftcms/ecs)
+        run: composer lint
+
+      - name: Static analysis (PHPStan level 8, craftcms/phpstan)
+        run: composer analyse
+
+  tests:
+    name: Unit tests · PHP ${{ matrix.php }} · ${{ matrix.stability }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.2', '8.3', '8.4']
+        stability: [prefer-stable, prefer-lowest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: mbstring, intl, gd, zip, pdo_mysql
+          coverage: none
+
+      - name: Install dependencies
+        run: composer update --${{ matrix.stability }} --prefer-dist --no-interaction --no-progress
+
+      - name: Unit tests
+        run: vendor/bin/phpunit
+
+  install:
+    name: Real install · Craft 5 · PHP ${{ matrix.php }} · MySQL
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.2', '8.4']
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: craft
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -proot"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
+    env:
+      BASE_URL: http://localhost:8080
+      ADMIN_USER: admin
+      ADMIN_PASSWORD: 'Admin12345!x'
+
+    steps:
+      - name: Check out the plugin
+        uses: actions/checkout@v4
+        with:
+          path: plugin
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: mbstring, intl, gd, zip, pdo_mysql, bcmath, curl, dom, exif, fileinfo
+          ini-values: memory_limit=-1
+          coverage: none
+          tools: composer:v2
+
+      - name: Create a Craft project
+        run: composer create-project craftcms/craft site --no-interaction --no-progress --no-scripts
+
+      - name: Require the plugin from this checkout
+        working-directory: site
+        run: |
+          composer config repositories.plugin '{"type":"path","url":"../plugin","options":{"symlink":false}}'
+          composer require ruvelo/craft-security-alerts:@dev --no-interaction --no-progress
+          composer show ruvelo/craft-security-alerts | grep -E '^(name|versions|requires)'
+          composer show craftcms/cms | grep -E '^versions'
+
+      - name: Install Craft
+        working-directory: site
+        run: |
+          cp .env.example.dev .env
+          cat >> .env <<'ENV'
+          CRAFT_DB_DRIVER=mysql
+          CRAFT_DB_SERVER=127.0.0.1
+          CRAFT_DB_PORT=3306
+          CRAFT_DB_DATABASE=craft
+          CRAFT_DB_USER=root
+          CRAFT_DB_PASSWORD=root
+          CRAFT_DB_SCHEMA=
+          CRAFT_DB_TABLE_PREFIX=
+          ENV
+          php craft setup/keys
+          php craft install --email=ci@example.com --username="$ADMIN_USER" --password="$ADMIN_PASSWORD" \
+            --site-name='CI Site' --language=en-US --site-url="$BASE_URL" --interactive=0
+
+      - name: Install the plugin
+        working-directory: site
+        run: |
+          php craft plugin/install security-alerts
+          php craft plugin/list | grep security-alerts
+          mysql -h 127.0.0.1 -uroot -proot craft -e 'DESCRIBE securityalerts_findings; SHOW INDEX FROM securityalerts_findings'
+
+      - name: Console command with real network access
+        working-directory: site
+        run: |
+          set +e
+          php craft security-alerts/check --json > "$RUNNER_TEMP/check.json" 2> "$RUNNER_TEMP/check.err"
+          code=$?
+          set -e
+          cat "$RUNNER_TEMP/check.err"
+          cat "$RUNNER_TEMP/check.json"
+          echo "exit code: $code"
+          python3 -I -c 'import json,sys; d=json.load(open(sys.argv[1])); assert {"exploited","total","packages_checked","warnings","findings"} <= d.keys(); assert d["packages_checked"] > 10; print("valid JSON,", d["total"], "findings,", d["packages_checked"], "packages")' "$RUNNER_TEMP/check.json"
+          [ "$code" -le 1 ] || { echo "::error::exit code $code means a source failed"; exit 1; }
+
+      - name: Console command options and exit codes
+        working-directory: site
+        run: |
+          set +e
+          php craft security-alerts/check --fail-on=bogus > /dev/null 2>&1; [ $? -eq 2 ] || { echo "::error::a bad --fail-on must exit 2"; exit 1; }
+          php craft security-alerts/check --dry-run --json --fail-on=any > "$RUNNER_TEMP/dry.json"; code=$?
+          set -e
+          python3 -I -c 'import json,sys; json.load(open(sys.argv[1]))' "$RUNNER_TEMP/dry.json"
+          [ "$code" -le 1 ]
+
+      - name: A vulnerable version is found, flagged, stored and emailed once
+        working-directory: site
+        run: |
+          # Pretend the lock file says Craft 5.6.10, which has a CVE on the CISA list.
+          cp composer.lock "$RUNNER_TEMP/composer.lock.orig"
+          python3 -I - <<'PY'
+          import json
+          d = json.load(open("composer.lock"))
+          for p in d["packages"]:
+              if p["name"] == "craftcms/cms":
+                  p["version"] = "5.6.10"
+          json.dump(d, open("composer.lock", "w"))
+          PY
+
+          # Mail goes to a file through Sendmail's pipe mode.
+          printf '#!/bin/sh\ncat >> "%s/mail.txt"\n' "$RUNNER_TEMP" > "$RUNNER_TEMP/fakemail.sh"
+          chmod +x "$RUNNER_TEMP/fakemail.sh"
+          php craft project-config/set email.transportType 'craft\mail\transportadapters\Sendmail'
+          php craft project-config/set email.transportSettings.command "$RUNNER_TEMP/fakemail.sh -t"
+          php craft project-config/set plugins.security-alerts.settings.emails ops@example.com
+
+          set +e
+          php craft security-alerts/check --dry-run --fail-on=exploited > /dev/null; dry=$?
+          php craft security-alerts/check --json > "$RUNNER_TEMP/vuln.json"; run1=$?
+          php craft security-alerts/check > /dev/null; run2=$?
+          set -e
+          echo "dry-run exit: $dry (expected 1)"
+          [ "$dry" -eq 1 ]
+          python3 -I -c 'import json,sys; d=json.load(open(sys.argv[1])); assert d["exploited"] >= 1, d["exploited"]; assert d["findings"][0]["exploited"] is True; assert d["findings"][0]["cve"] == "CVE-2025-32432"; print(d["total"], "findings,", d["exploited"], "exploited")' "$RUNNER_TEMP/vuln.json"
+
+          rows=$(mysql -h 127.0.0.1 -uroot -proot craft -N -e 'SELECT COUNT(*) FROM securityalerts_findings')
+          exploited=$(mysql -h 127.0.0.1 -uroot -proot craft -N -e 'SELECT COUNT(*) FROM securityalerts_findings WHERE exploited = 1')
+          echo "stored rows: $rows, exploited: $exploited"
+          [ "$rows" -ge 1 ] && [ "$exploited" -ge 1 ]
+          mails=$(grep -c '^Subject:' "$RUNNER_TEMP/mail.txt")
+          echo "emails sent over two runs: $mails (expected 1)"
+          [ "$mails" -eq 1 ]
+          grep -q 'Exploited' "$RUNNER_TEMP/mail.txt"
+
+      - name: Control panel, with a real login
+        working-directory: site
+        run: |
+          php -S 127.0.0.1:8080 -t web > "$RUNNER_TEMP/server.log" 2>&1 &
+          for i in $(seq 1 30); do curl -s -o /dev/null "$BASE_URL/admin/login" && break; sleep 1; done
+
+          jar="$RUNNER_TEMP/cookies.txt"
+          token() { curl -s -c "$jar" -b "$jar" -H 'Accept: application/json' "$BASE_URL/index.php?p=admin/actions/users/session-info" | python3 -I -c 'import json,sys; print(json.load(sys.stdin)["csrfTokenValue"])'; }
+
+          tok=$(token)
+          curl -s -c "$jar" -b "$jar" -H 'Accept: application/json' -H "X-CSRF-Token: $tok" \
+            --data-urlencode "loginName=$ADMIN_USER" --data-urlencode "password=$ADMIN_PASSWORD" \
+            "$BASE_URL/index.php?p=admin/actions/users/login" | tee "$RUNNER_TEMP/login.json"
+          python3 -I -c 'import json,sys; assert json.load(open(sys.argv[1])).get("returnUrl")' "$RUNNER_TEMP/login.json"
+
+          status=$(curl -s -L -c "$jar" -b "$jar" -o "$RUNNER_TEMP/utility.html" -w '%{http_code}' "$BASE_URL/admin/utilities/security-alerts")
+          echo "utility page: HTTP $status"
+          [ "$status" = 200 ] || { head -c 3000 "$RUNNER_TEMP/utility.html"; tail -n 30 "$RUNNER_TEMP/server.log"; exit 1; }
+          grep -q '<title>Security alerts' "$RUNNER_TEMP/utility.html" || { echo "::error::page title missing"; exit 1; }
+          grep -q 'Check now' "$RUNNER_TEMP/utility.html"
+          grep -q 'Exploited — patch now' "$RUNNER_TEMP/utility.html" || { echo "::error::no exploited badge"; exit 1; }
+          grep -q 'CVE-2025-32432' "$RUNNER_TEMP/utility.html"
+
+          echo "--- Check now without a CSRF token is refused"
+          status=$(curl -s -c "$jar" -b "$jar" -o /dev/null -w '%{http_code}' -X POST -H 'Accept: application/json' "$BASE_URL/index.php?p=admin/actions/security-alerts/alerts/check")
+          echo "HTTP $status"
+          [ "$status" = 400 ]
+
+          echo "--- Check now with a token"
+          tok=$(token)
+          curl -s -c "$jar" -b "$jar" -H 'Accept: application/json' -H "X-CSRF-Token: $tok" -X POST \
+            "$BASE_URL/index.php?p=admin/actions/security-alerts/alerts/check" | tee "$RUNNER_TEMP/now.json"
+          python3 -I -c 'import json,sys; d=json.load(open(sys.argv[1])); assert d["exploited"] >= 1 and d["total"] >= 1' "$RUNNER_TEMP/now.json"
+
+          echo "--- Dashboard widget"
+          curl -s -c "$jar" -b "$jar" -H 'Accept: application/json' -H "X-CSRF-Token: $tok" \
+            --data-urlencode 'type=ruvelo\securityalerts\widgets\SecurityAlertsWidget' --data-urlencode 'settings[colspan]=2' \
+            "$BASE_URL/index.php?p=admin/actions/dashboard/create-widget" | tee "$RUNNER_TEMP/widget.json"
+          grep -q 'rv-sa-widget' "$RUNNER_TEMP/widget.json"
+
+          echo "--- Settings page"
+          status=$(curl -s -L -c "$jar" -b "$jar" -o "$RUNNER_TEMP/settings.html" -w '%{http_code}' "$BASE_URL/admin/settings/plugins/security-alerts")
+          [ "$status" = 200 ]
+          grep -q 'What leaves this server' "$RUNNER_TEMP/settings.html"
+
+          echo "--- The fallback queues one job for two visits"
+          php craft project-config/set plugins.security-alerts.settings.checkOnCpUse true
+          mysql -h 127.0.0.1 -uroot -proot craft -e "DELETE FROM securityalerts_state"
+          curl -s -c "$jar" -b "$jar" -o /dev/null "$BASE_URL/admin/dashboard"
+          curl -s -c "$jar" -b "$jar" -o /dev/null "$BASE_URL/admin/dashboard"
+          jobs=$(mysql -h 127.0.0.1 -uroot -proot craft -N -e "SELECT COUNT(*) FROM queue WHERE description LIKE '%known vulnerabilities%' OR job LIKE '%CheckJob%'")
+          echo "queued jobs: $jobs (expected 1)"
+          [ "$jobs" -eq 1 ]
+          php craft queue/run
+          mysql -h 127.0.0.1 -uroot -proot craft -N -e "SELECT value FROM securityalerts_state WHERE name='last_check'" | grep -q .
+
+      - name: Uninstall removes the tables
+        working-directory: site
+        run: |
+          cp "$RUNNER_TEMP/composer.lock.orig" composer.lock
+          php craft plugin/uninstall security-alerts
+          n=$(mysql -h 127.0.0.1 -uroot -proot craft -N -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='craft' AND table_name LIKE 'securityalerts_%'")
+          [ "$n" -eq 0 ]
+
+      - name: Logs on failure
+        if: failure()
+        working-directory: site
+        run: |
+          tail -n 60 storage/logs/*.log 2>/dev/null || true
+          tail -n 30 "$RUNNER_TEMP/server.log" 2>/dev/null || true
