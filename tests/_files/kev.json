@@ -1,0 +1,28 @@
+{
+  "title": "CISA Catalog of Known Exploited Vulnerabilities",
+  "catalogVersion": "2026.10.08",
+  "count": 3,
+  "vulnerabilities": [
+    {
+      "cveID": "CVE-2025-32432",
+      "vendorProject": "Craft CMS",
+      "product": "Craft CMS",
+      "vulnerabilityName": "Craft CMS Code Injection Vulnerability",
+      "dateAdded": "2025-09-25"
+    },
+    {
+      "cveID": "cve-2099-0005",
+      "vendorProject": "Acme",
+      "product": "Widgets",
+      "vulnerabilityName": "Lower-case id, as a test of normalising",
+      "dateAdded": "2026-09-01"
+    },
+    {
+      "cveID": "CVE-2024-34102",
+      "vendorProject": "Adobe",
+      "product": "Commerce and Magento",
+      "vulnerabilityName": "XXE",
+      "dateAdded": "2024-07-17"
+    }
+  ]
+}

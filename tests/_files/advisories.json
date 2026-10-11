@@ -1,0 +1,103 @@
+{
+  "advisories": {
+    "craftcms/cms": [
+      {
+        "advisoryId": "PKSA-craft-rce-0001",
+        "packageName": "craftcms/cms",
+        "remoteId": "craftcms/cms/CVE-2025-32432.yaml",
+        "title": "Craft CMS remote code execution vulnerability",
+        "link": "https://github.com/craftcms/cms/security/advisories/GHSA-f3gw-9ww9-jmc3",
+        "cve": "CVE-2025-32432",
+        "affectedVersions": ">=3.0.0-RC1,<3.9.15|>=4.0.0-RC1,<4.14.15|>=5.0.0-RC1,<5.6.17",
+        "source": "GitHub",
+        "reportedAt": "2025-04-10 00:00:00",
+        "composerRepository": null,
+        "severity": "critical"
+      },
+      {
+        "advisoryId": "PKSA-craft-xss-0002",
+        "packageName": "craftcms/cms",
+        "remoteId": "craftcms/cms/CVE-2099-0002.yaml",
+        "title": "Stored XSS in the control panel",
+        "link": "https://example.com/advisories/craft-xss",
+        "cve": "CVE-2099-0002",
+        "affectedVersions": ">=5.0.0-RC1,<=5.7.9",
+        "source": "GitHub",
+        "reportedAt": "2026-01-10 00:00:00",
+        "composerRepository": null,
+        "severity": "medium"
+      },
+      {
+        "advisoryId": "PKSA-craft-old-0003",
+        "packageName": "craftcms/cms",
+        "remoteId": "craftcms/cms/CVE-2099-0003.yaml",
+        "title": "Old issue in Craft 3",
+        "link": "https://example.com/advisories/craft-3",
+        "cve": "CVE-2099-0003",
+        "affectedVersions": ">=3.0.0-RC1,<3.7.0",
+        "source": "GitHub",
+        "reportedAt": "2021-01-10 00:00:00",
+        "composerRepository": null,
+        "severity": "low"
+      }
+    ],
+    "craftcms/commerce": [
+      {
+        "advisoryId": "PKSA-commerce-0004",
+        "packageName": "craftcms/commerce",
+        "remoteId": "craftcms/commerce/CVE-2099-0004.yaml",
+        "title": "Order data exposed to other customers",
+        "link": "https://example.com/advisories/commerce",
+        "cve": "CVE-2099-0004",
+        "affectedVersions": ">=5.0.0,<5.3.1",
+        "source": "GitHub",
+        "reportedAt": "2026-02-01 00:00:00",
+        "composerRepository": null,
+        "severity": null
+      }
+    ],
+    "acme/craft-widgets": [
+      {
+        "advisoryId": "PKSA-widgets-0005",
+        "packageName": "acme/craft-widgets",
+        "remoteId": "acme/craft-widgets/CVE-2099-0005.yaml",
+        "title": "SQL injection in <b>widget</b> search",
+        "link": "javascript:alert(1)",
+        "cve": "CVE-2099-0005",
+        "affectedVersions": ">=1.0.0,<1.4.2",
+        "source": "GitHub",
+        "reportedAt": "2026-03-01 00:00:00",
+        "composerRepository": null,
+        "severity": "high"
+      },
+      {
+        "advisoryId": "PKSA-widgets-0006",
+        "packageName": "acme/craft-widgets",
+        "remoteId": "acme/craft-widgets/no-cve.yaml",
+        "title": "Missing check",
+        "link": null,
+        "cve": null,
+        "affectedVersions": ">=1.0.0,<1.2.0|>=2.0.0,<2.0.5",
+        "source": "GitHub",
+        "reportedAt": "2026-03-02 00:00:00",
+        "composerRepository": null,
+        "severity": "medium"
+      }
+    ],
+    "acme/craft-unrelated": [
+      {
+        "advisoryId": "PKSA-unrelated-0007",
+        "packageName": "acme/craft-unrelated",
+        "remoteId": "x",
+        "title": "Not installed",
+        "link": "https://example.com/x",
+        "cve": "CVE-2099-0007",
+        "affectedVersions": "<9.0.0",
+        "source": "GitHub",
+        "reportedAt": "2026-03-02 00:00:00",
+        "composerRepository": null,
+        "severity": "high"
+      }
+    ]
+  }
+}
