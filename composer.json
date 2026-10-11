@@ -1,0 +1,82 @@
+{
+  "name": "ruvelo/craft-security-alerts",
+  "description": "Security alerts for Craft CMS: tells you in the control panel and by email when Craft or an installed plugin has a known vulnerability, loudest when it is exploited in the wild.",
+  "type": "craft-plugin",
+  "license": "MIT",
+  "keywords": [
+    "craft",
+    "craftcms",
+    "craft-plugin",
+    "security",
+    "advisories",
+    "vulnerabilities",
+    "cisa-kev",
+    "packagist"
+  ],
+  "homepage": "https://github.com/Ruvelo/craft-security-alerts",
+  "authors": [
+    {
+      "name": "François Bultez",
+      "homepage": "https://github.com/francoisbultez",
+      "role": "Developer"
+    }
+  ],
+  "support": {
+    "issues": "https://github.com/Ruvelo/craft-security-alerts/issues",
+    "source": "https://github.com/Ruvelo/craft-security-alerts",
+    "docs": "https://github.com/Ruvelo/craft-security-alerts#readme"
+  },
+  "require": {
+    "php": "~8.2.0||~8.3.0||~8.4.0",
+    "composer/semver": "^3.0",
+    "craftcms/cms": "^5.0.0"
+  },
+  "require-dev": {
+    "craftcms/ecs": "dev-main",
+    "craftcms/phpstan": "dev-main",
+    "phpstan/phpstan": "^2.1",
+    "phpunit/phpunit": "^10.5||^11.0"
+  },
+  "autoload": {
+    "psr-4": {
+      "ruvelo\\securityalerts\\": "src/"
+    }
+  },
+  "autoload-dev": {
+    "psr-4": {
+      "ruvelo\\securityalerts\\tests\\": "tests/"
+    }
+  },
+  "extra": {
+    "handle": "security-alerts",
+    "name": "Security Alerts",
+    "developer": "Ruvelo",
+    "documentationUrl": "https://github.com/Ruvelo/craft-security-alerts#readme",
+    "changelogUrl": "https://raw.githubusercontent.com/Ruvelo/craft-security-alerts/main/CHANGELOG.md",
+    "class": "ruvelo\\securityalerts\\Plugin"
+  },
+  "config": {
+    "sort-packages": true,
+    "optimize-autoloader": true,
+    "platform": {
+      "php": "8.2.0"
+    },
+    "allow-plugins": {
+      "craftcms/plugin-installer": true,
+      "yiisoft/yii2-composer": true
+    }
+  },
+  "minimum-stability": "dev",
+  "prefer-stable": true,
+  "scripts": {
+    "test": "phpunit",
+    "lint": "ecs check --ansi",
+    "fix": "ecs check --ansi --fix",
+    "analyse": "phpstan analyse --memory-limit=1G --no-progress",
+    "check": [
+      "@lint",
+      "@analyse",
+      "@test"
+    ]
+  }
+}
