@@ -1,0 +1,68 @@
+/* Security alerts: sits on Craft's own control panel variables, so it follows light and dark mode. */
+.rv-sa-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.rv-sa-bar p { margin: 0; }
+.rv-sa-bar form { margin: 0; }
+
+.rv-sa-alert {
+  margin: 0 0 16px;
+  padding: 12px 14px;
+  border-radius: 6px;
+  border: 1px solid var(--red-300, #fca5a5);
+  background: var(--red-050, #fef2f2);
+  color: var(--red-800, #991b1b);
+  font-weight: 600;
+}
+.rv-sa-alert--ok {
+  border-color: var(--hairline-color, #e3e5e8);
+  background: transparent;
+  color: var(--medium-text-color, #596673);
+  font-weight: 400;
+}
+.rv-sa-warning {
+  margin: 0 0 12px;
+  color: var(--medium-text-color, #596673);
+}
+
+.rv-sa-table td, .rv-sa-table th { vertical-align: top; }
+.rv-sa-table .rv-sa-title { font-weight: 600; }
+.rv-sa-table code { white-space: nowrap; }
+.rv-sa-row--exploited { background: var(--red-050, #fef2f2); }
+
+.rv-sa-badge {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  background: var(--gray-100, #f3f4f6);
+  color: var(--gray-700, #374151);
+}
+.rv-sa-badge--exploited { background: var(--red-600, #dc2626); color: #fff; }
+.rv-sa-badge--critical,
+.rv-sa-badge--high { background: var(--red-100, #fee2e2); color: var(--red-800, #991b1b); }
+.rv-sa-badge--medium { background: #fef3c7; color: #92400e; }
+
+.rv-sa-note {
+  margin: 24px 0 0;
+  padding: 12px 14px;
+  border-radius: 6px;
+  background: var(--gray-050, #f9fafb);
+  border: 1px solid var(--hairline-color, #e3e5e8);
+  max-width: 46rem;
+}
+.rv-sa-note p { margin: 0 0 6px; }
+.rv-sa-note p:last-child { margin-bottom: 0; }
+
+.rv-sa-widget-count { font-size: 32px; font-weight: 700; line-height: 1.1; margin: 0; }
+.rv-sa-widget-count--exploited { color: var(--red-600, #dc2626); }
+.rv-sa-widget ul { margin: 10px 0 0; padding-left: 18px; }
+.rv-sa-strong { margin: 4px 0 0; font-weight: 600; color: var(--red-700, #b91c1c); }
+.rv-sa-nowrap { white-space: nowrap; }

@@ -1,0 +1,78 @@
+{% set exploited = findings|filter(f => f.exploited)|length %}
+{% set open = findings|length %}
+
+{% if exploited %}
+  <p class="rv-sa-alert" role="alert">
+    {{ '{n, plural, =1{1 known vulnerability is being exploited in the wild. Patch it now.} other{# known vulnerabilities are being exploited in the wild. Patch them now.}}'|t('security-alerts', {n: exploited}) }}
+  </p>
+{% elseif open %}
+  <p class="rv-sa-alert rv-sa-alert--ok">
+    {{ 'None of these are on the CISA list of exploited vulnerabilities.'|t('security-alerts') }}
+  </p>
+{% endif %}
+
+<div class="rv-sa-bar">
+  <p class="light">
+    {% if lastCheck %}
+      {{ 'Last checked {time}.'|t('security-alerts', {time: lastCheck|datetime('short')}) }}
+    {% else %}
+      {{ 'Not checked yet.'|t('security-alerts') }}
+    {% endif %}
+    {{ '{n, plural, =0{No open findings.} =1{1 open finding.} other{# open findings.}}'|t('security-alerts', {n: open}) }}
+  </p>
+  <form method="post" accept-charset="UTF-8">
+    {{ csrfInput() }}
+    {{ actionInput('security-alerts/alerts/check') }}
+    {{ redirectInput('utilities/security-alerts') }}
+    <button type="submit" class="btn submit">{{ 'Check now'|t('security-alerts') }}</button>
+  </form>
+</div>
+
+{% if findings %}
+  <table class="data fullwidth rv-sa-table">
+    <thead>
+      <tr>
+        <th>{{ 'Package'|t('security-alerts') }}</th>
+        <th>{{ 'Installed'|t('security-alerts') }}</th>
+        <th>{{ 'Advisory'|t('security-alerts') }}</th>
+        <th>{{ 'CVE'|t('security-alerts') }}</th>
+        <th>{{ 'Severity'|t('security-alerts') }}</th>
+        <th>{{ 'Fixed in'|t('security-alerts') }}</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for f in findings %}
+        <tr class="{{ f.exploited ? 'rv-sa-row--exploited' }}">
+          <td><code>{{ f.package }}</code></td>
+          <td><code>{{ f.installedVersion }}</code></td>
+          <td>
+            {% if f.exploited %}
+              <span class="rv-sa-badge rv-sa-badge--exploited">{{ 'Exploited — patch now'|t('security-alerts') }}</span><br>
+            {% endif %}
+            {% if f.safeLink %}
+              <a class="rv-sa-title" href="{{ f.safeLink }}" target="_blank" rel="noopener noreferrer">{{ f.title }}</a>
+            {% else %}
+              <span class="rv-sa-title">{{ f.title }}</span>
+            {% endif %}
+          </td>
+          <td class="rv-sa-nowrap">{{ f.cve ?? "—" }}</td>
+          <td>
+            <span class="rv-sa-badge rv-sa-badge--{{ f.severityLevel.value }}">{{ f.severityLevel.label|t('security-alerts') }}</span>
+            {% if f.severity is null %}<span class="light">{{ '(not rated)'|t('security-alerts') }}</span>{% endif %}
+          </td>
+          <td>{% if f.fixedLabel %}<code>{{ f.fixedLabel }}</code>{% else %}<span class="light">{{ 'None listed'|t('security-alerts') }}</span>{% endif %}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% elseif lastCheck %}
+  <p class="rv-sa-alert rv-sa-alert--ok">{{ 'No known vulnerabilities in Craft or the installed plugins.'|t('security-alerts') }}</p>
+{% else %}
+  <p class="light">{{ 'Press “Check now” to run the first check.'|t('security-alerts') }}</p>
+{% endif %}
+
+<div class="rv-sa-note">
+  <p><strong>{{ 'What leaves this server'|t('security-alerts') }}</strong></p>
+  <p>{{ 'Only the names of the packages in composer.lock go to packagist.org, and a plain download from cisa.gov. Versions are matched here, so nobody learns which version you run.'|t('security-alerts') }}</p>
+  <p class="light">{{ 'For a daily check without relying on visits to the control panel, run “php craft security-alerts/check” from cron.'|t('security-alerts') }}</p>
+</div>

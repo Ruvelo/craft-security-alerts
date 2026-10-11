@@ -1,0 +1,45 @@
+{% import '_includes/forms.twig' as forms %}
+{% do view.registerAssetBundle('ruvelo\\securityalerts\\assets\\AlertsAsset') %}
+
+{{ forms.lightswitchField({
+  label: 'Enable email and the optional daily check'|t('security-alerts'),
+  instructions: 'Turns off email and the check on control panel use. The console command and “Check now” still work.'|t('security-alerts'),
+  id: 'enabled',
+  name: 'enabled',
+  on: settings.enabled,
+  errors: settings.getErrors('enabled'),
+}) }}
+
+{{ forms.textareaField({
+  label: 'Notification emails'|t('security-alerts'),
+  instructions: 'Who to tell about new findings. Separate addresses with commas or new lines. Empty means the control panel only.'|t('security-alerts'),
+  id: 'emails',
+  name: 'emails',
+  value: settings.emails,
+  rows: 2,
+  errors: settings.getErrors('emails'),
+}) }}
+
+{{ forms.selectField({
+  label: 'Minimum severity to email'|t('security-alerts'),
+  instructions: 'Findings that are exploited in the wild are always emailed. Advisories Packagist has not rated count as high.'|t('security-alerts'),
+  id: 'minimumSeverity',
+  name: 'minimumSeverity',
+  options: settings.severityOptions(),
+  value: settings.minimumSeverity,
+  errors: settings.getErrors('minimumSeverity'),
+}) }}
+
+{{ forms.lightswitchField({
+  label: 'Check when the control panel is used'|t('security-alerts'),
+  instructions: 'A fallback for sites without a cron job: when someone opens the control panel and no check has run for a day, a check is added to the queue. Running “php craft security-alerts/check” from cron is the more reliable way.'|t('security-alerts'),
+  id: 'checkOnCpUse',
+  name: 'checkOnCpUse',
+  on: settings.checkOnCpUse,
+  errors: settings.getErrors('checkOnCpUse'),
+}) }}
+
+<div class="rv-sa-note">
+  <p><strong>{{ 'What leaves this server'|t('security-alerts') }}</strong></p>
+  <p>{{ 'Only package names are sent: the runtime packages in composer.lock go to packagist.org to fetch their advisories, and the list of exploited vulnerabilities is downloaded from cisa.gov. Versions are matched on this server, so nobody learns which version you run. No site URL, no content, no user data, no account and no key. Your server’s address is visible to those two sites, as it is for any request.'|t('security-alerts') }}</p>
+</div>

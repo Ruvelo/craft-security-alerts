@@ -1,0 +1,27 @@
+<div class="rv-sa-widget">
+  <p class="rv-sa-widget-count {{ exploited ? 'rv-sa-widget-count--exploited' }}">
+    {{ total }}
+  </p>
+  <p class="{{ exploited ? 'rv-sa-strong' : 'light' }}">
+    {% if exploited %}
+      {{ '{n, plural, =1{1 is being exploited. Patch it now.} other{# are being exploited. Patch them now.}}'|t('security-alerts', {n: exploited}) }}
+    {% elseif total %}
+      {{ 'open findings, none known to be exploited'|t('security-alerts') }}
+    {% else %}
+      {{ 'No known vulnerabilities.'|t('security-alerts') }}
+    {% endif %}
+  </p>
+  {% if top %}
+    <ul>
+      {% for f in top %}
+        <li>
+          {% if f.exploited %}<span class="rv-sa-badge rv-sa-badge--exploited">{{ 'Exploited'|t('security-alerts') }}</span>{% endif %}
+          <code>{{ f.package }}</code> {{ f.installedVersion }}
+        </li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+  {% if url %}
+    <p style="margin-top: 12px"><a href="{{ url }}">{{ 'Open security alerts'|t('security-alerts') }}</a></p>
+  {% endif %}
+</div>
