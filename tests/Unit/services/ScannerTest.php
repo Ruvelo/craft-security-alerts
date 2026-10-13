@@ -7,41 +7,41 @@ namespace ruvelo\securityalerts\tests\Unit\services;
 use PHPUnit\Framework\TestCase;
 use ruvelo\securityalerts\exceptions\SourceException;
 use ruvelo\securityalerts\models\Finding;
-use ruvelo\securityalerts\services\AdvisoryMatcher;
-use ruvelo\securityalerts\services\ComposerLock;
 use ruvelo\securityalerts\services\Scanner;
-use ruvelo\securityalerts\sources\AdvisoryClient;
-use ruvelo\securityalerts\sources\KevCatalogue;
-use ruvelo\securityalerts\tests\Fake\FakeFetcher;
+use ruvelo\securityalerts\tests\Fake\FakeClient;
+use ruvelo\securityalerts\tests\Fake\Wiring;
 
+/**
+ * The scanner on the public feeds, with the real core behind it and a fake HTTP client in front.
+ */
 class ScannerTest extends TestCase
 {
-    private FakeFetcher $fetcher;
+    private FakeClient $client;
+
+    /** @var list<string> */
+    private array $locks = [];
 
     protected function setUp(): void
     {
-        $this->fetcher = new FakeFetcher();
+        $this->client = new FakeClient();
+    }
+
+    protected function tearDown(): void
+    {
+        foreach ($this->locks as $lock) {
+            @unlink($lock);
+        }
+        putenv('RUVELO_ADVISORIES_SOURCE');
     }
 
     /**
-     * @param array<string, string>|SourceException $lock
+     * @param array<string, string> $packages
      */
-    private function scanner(array|SourceException $lock, ?string $craftVersion = '5.6.10'): Scanner
+    private function scanner(array $packages, ?string $craftVersion = '5.6.10', string $source = 'public'): Scanner
     {
-        $composerLock = $this->createMock(ComposerLock::class);
-        if ($lock instanceof SourceException) {
-            $composerLock->method('packages')->willThrowException($lock);
-        } else {
-            $composerLock->method('packages')->willReturn($lock);
-        }
+        $this->locks[] = $lock = Wiring::lock($packages);
 
-        return new Scanner(
-            $composerLock,
-            new AdvisoryClient($this->fetcher),
-            new KevCatalogue($this->fetcher),
-            new AdvisoryMatcher(),
-            $craftVersion,
-        );
+        return Wiring::scanner($this->client, $source, $lock, $craftVersion);
     }
 
     /**
@@ -65,6 +65,7 @@ class ScannerTest extends TestCase
         $this->assertContains('CVE-2099-0002', $this->cves($result->findings));
         $this->assertSame([], $result->warnings);
         $this->assertSame(2, $result->packagesChecked);
+        $this->assertSame('public', $result->source());
     }
 
     public function testAnAdvisoryEndingAtALastAffectedVersionReportsTheFixAsLater(): void
@@ -89,10 +90,7 @@ class ScannerTest extends TestCase
         // CVE-2099-0005 is listed as exploited in the fixture, and is rated only "high".
         $result = $this->scanner(['craftcms/cms' => '5.6.10', 'acme/craft-widgets' => '1.2.0'])->scan();
 
-        $this->assertSame(
-            ['CVE-2025-32432', 'CVE-2099-0005'],
-            array_slice($this->cves($result->exploited()), 0, 2),
-        );
+        $this->assertSame(['CVE-2025-32432', 'CVE-2099-0005'], array_slice($this->cves($result->exploited()), 0, 2));
         $this->assertSame(['CVE-2025-32432', 'CVE-2099-0005'], array_slice($this->cves($result->findings), 0, 2));
     }
 
@@ -126,15 +124,26 @@ class ScannerTest extends TestCase
     {
         $this->scanner(['craftcms/cms' => '5.8.1', 'acme/craft-widgets' => '1.4.2'])->scan();
 
-        $this->assertSame(
-            'POST https://packagist.org/api/security-advisories/ packages[]=craftcms%2Fcms&packages[]=acme%2Fcraft-widgets',
-            $this->fetcher->requests[0],
-        );
+        $this->assertStringContainsString('packages[]=acme%2Fcraft-widgets&packages[]=craftcms%2Fcms', $this->client->to('packagist.org')[0]);
+        $this->assertCount(1, $this->client->to('packagist.org'));
+        $this->assertStringNotContainsString('5.8.1', $this->client->to('packagist.org')[0]);
+    }
+
+    public function testDevPackagesAndDevBranchesAreNotSent(): void
+    {
+        $this->client = new FakeClient();
+        Wiring::scanner($this->client)->scan();
+
+        $sent = $this->client->to('packagist.org')[0];
+        $this->assertStringContainsString('craftcms%2Fcms', $sent);
+        $this->assertStringNotContainsString('phpunit', $sent, 'packages-dev is not sent');
+        $this->assertStringNotContainsString('private-thing', $sent, 'dev-main is not sent');
+        $this->assertStringNotContainsString('branch-thing', $sent, '2.x-dev is not sent');
     }
 
     public function testASilentCisaOutageWarnsAndFlagsNothing(): void
     {
-        $this->fetcher->kevDown = true;
+        $this->client->kevDown = true;
 
         $result = $this->scanner(['craftcms/cms' => '5.6.10'])->scan();
 
@@ -145,7 +154,7 @@ class ScannerTest extends TestCase
 
     public function testPackagistOutageIsAnError(): void
     {
-        $this->fetcher->packagistDown = true;
+        $this->client->packagistDown = true;
 
         $this->expectException(SourceException::class);
         $this->scanner(['craftcms/cms' => '5.6.10'])->scan();
@@ -153,11 +162,23 @@ class ScannerTest extends TestCase
 
     public function testMissingLockfileStillChecksCraftItself(): void
     {
-        $result = $this->scanner(new SourceException('composer.lock was not found'), '5.6.10')->scan();
+        $result = Wiring::scanner($this->client, 'public', '/nonexistent/composer.lock', '5.6.10')->scan();
 
         $this->assertSame('CVE-2025-32432', $result->findings[0]->cve);
-        $this->assertSame('composer.lock was not found', $result->warnings[0]);
+        $this->assertStringContainsString('composer.lock was not found', $result->warnings[0]);
         $this->assertSame(1, $result->packagesChecked);
+    }
+
+    public function testAnUnreadableLockfileStillChecksCraftItself(): void
+    {
+        $lock = (string)tempnam(sys_get_temp_dir(), 'sa-lock');
+        $this->locks[] = $lock;
+        file_put_contents($lock, 'not json');
+
+        $result = Wiring::scanner($this->client, 'public', $lock, '5.6.10')->scan();
+
+        $this->assertSame('CVE-2025-32432', $result->findings[0]->cve);
+        $this->assertStringContainsString('valid JSON', $result->warnings[0]);
     }
 
     public function testUnreadableCraftVersionStillChecksPlugins(): void
@@ -171,8 +192,102 @@ class ScannerTest extends TestCase
     public function testNothingToCheckIsAnError(): void
     {
         $this->expectException(SourceException::class);
-        $this->expectExceptionMessage('nothing to check');
+        $this->expectExceptionMessage('composer.lock was not found');
 
-        $this->scanner(new SourceException('no lock'), null)->scan();
+        Wiring::scanner($this->client, 'public', '/nonexistent/composer.lock', null)->scan();
+    }
+
+    public function testTheCraftVersionIsUsedWhenTheLockDoesNotListIt(): void
+    {
+        $result = $this->scanner(['acme/craft-widgets' => '1.2.0'], '5.6.10')->scan();
+
+        $this->assertContains('CVE-2025-32432', $this->cves($result->findings));
+        $this->assertSame(2, $result->packagesChecked);
+    }
+
+    // --- Valtry, the default source ---
+
+    public function testValtryIsAskedFirstWithNamesOnlyAndAnswersTheSameFindings(): void
+    {
+        $this->client->valtryUp = true;
+        $public = $this->scanner(['craftcms/cms' => '5.6.10', 'acme/craft-widgets' => '1.2.0'])->scan();
+        $public = array_map(static fn(Finding $f): array => $f->toArray(), $public->findings);
+        $this->client = $client = new FakeClient();
+        $client->valtryUp = true;
+
+        $result = $this->scanner(['craftcms/cms' => '5.6.10', 'acme/craft-widgets' => '1.2.0'], source: 'valtry')->scan();
+
+        $this->assertSame('valtry', $result->source());
+        $this->assertSame($public, array_map(static fn(Finding $f): array => $f->toArray(), $result->findings));
+        $this->assertSame([], $client->to('packagist.org'));
+        $this->assertSame([], $client->to('cisa.gov'), 'Valtry carries the exploited verdict');
+        $sent = $client->to('valtry.test');
+        $this->assertCount(1, $sent);
+        $this->assertStringContainsString('craftcms/cms', $sent[0]);
+        $this->assertStringNotContainsString('5.6.10', $sent[0], 'never versions');
+        $this->assertStringNotContainsString('1.2.0', $sent[0]);
+    }
+
+    public function testAnUnreachableValtryFallsBackToTheFeeds(): void
+    {
+        $this->client->valtryUp = false;
+
+        $result = $this->scanner(['craftcms/cms' => '5.6.10'], source: 'valtry')->scan();
+
+        $this->assertSame('public', $result->source());
+        $this->assertSame('CVE-2025-32432', $result->findings[0]->cve);
+        $this->assertTrue($result->findings[0]->exploited);
+        $this->assertCount(1, $this->client->to('packagist.org'));
+    }
+
+    public function testAnErrorFromValtryFallsBackToTheFeeds(): void
+    {
+        $this->client->valtryUp = true;
+        $this->client->valtryStatus = 503;
+
+        $result = $this->scanner(['craftcms/cms' => '5.6.10'], source: 'valtry')->scan();
+
+        $this->assertSame('public', $result->source());
+        $this->assertNotSame([], $result->findings);
+    }
+
+    public function testAnAnswerThatDoesNotVerifyFallsBackToTheFeeds(): void
+    {
+        $this->client->valtryUp = true;
+        $this->client->tamper = static fn(string $body): string => str_replace('Craft CMS remote code execution vulnerability', 'Nothing to see', $body);
+
+        $result = $this->scanner(['craftcms/cms' => '5.6.10'], source: 'valtry')->scan();
+
+        $this->assertSame('public', $result->source());
+        $this->assertStringContainsString('remote code execution', $result->findings[0]->title);
+    }
+
+    public function testThePublicSettingNeverContactsValtry(): void
+    {
+        $this->client->valtryUp = true;
+
+        $result = $this->scanner(['craftcms/cms' => '5.6.10'], source: 'public')->scan();
+
+        $this->assertSame('public', $result->source());
+        $this->assertSame([], $this->client->to('valtry.test'));
+    }
+
+    public function testTheEnvironmentOptOutWinsOverTheSetting(): void
+    {
+        putenv('RUVELO_ADVISORIES_SOURCE=public');
+        $this->client->valtryUp = true;
+
+        $result = $this->scanner(['craftcms/cms' => '5.6.10'], source: 'valtry')->scan();
+
+        $this->assertSame('public', $result->source());
+        $this->assertSame([], $this->client->to('valtry.test'));
+    }
+
+    public function testTheSourceIsNamedNeutrally(): void
+    {
+        $this->client->valtryUp = true;
+
+        $this->assertSame('Valtry Advisory API (signed answers)', $this->scanner(['craftcms/cms' => '5.6.10'], source: 'valtry')->scan()->sourceLabel());
+        $this->assertSame('public feeds (Packagist and CISA)', $this->scanner(['craftcms/cms' => '5.6.10'])->scan()->sourceLabel());
     }
 }

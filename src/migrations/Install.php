@@ -23,6 +23,7 @@ class Install extends Migration
             'severity' => $this->string(16),
             'fixedIn' => $this->string(128),
             'fixedAfter' => $this->string(128),
+            'aliases' => $this->text(),
             'exploited' => $this->boolean()->notNull()->defaultValue(false),
             'notified' => $this->boolean()->notNull()->defaultValue(false),
             'notifiedExploited' => $this->boolean()->notNull()->defaultValue(false),

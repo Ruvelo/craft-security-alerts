@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace ruvelo\securityalerts\models;
 
+use Ruvelo\SecurityAdvisories\Ecosystem;
+use Ruvelo\SecurityAdvisories\Finding as CoreFinding;
+use Ruvelo\SecurityAdvisories\Severity as CoreSeverity;
+
 /**
  * One advisory that applies to one installed package.
  */
@@ -18,6 +22,7 @@ class Finding
      * @param int|null $id Row id, once stored
      * @param string|null $firstSeenAt UTC, once stored
      * @param string|null $fixedAfter When the advisory ends at "<=X" and names no fixed release: X, so the fix is later than that
+     * @param list<string> $aliases Other ids for the same vulnerability, so that it stays one finding when a different source names it
      */
     public function __construct(
         public readonly string $package,
@@ -32,7 +37,63 @@ class Finding
         public readonly ?int $id = null,
         public readonly ?string $firstSeenAt = null,
         public readonly ?string $fixedAfter = null,
+        public readonly array $aliases = [],
     ) {
+    }
+
+    /**
+     * What the shared core found, in this plugin's shape. A fix the core can only describe as
+     * ">X" (the advisory names the last affected release) becomes "later than X".
+     */
+    public static function fromCore(CoreFinding $finding, ?int $id = null, ?string $firstSeenAt = null): self
+    {
+        $fix = $finding->fixedIn;
+        $after = $fix !== null && str_starts_with($fix, '>') ? substr($fix, 1) : null;
+
+        return new self(
+            $finding->package,
+            $finding->installed,
+            $finding->advisoryId,
+            $finding->title,
+            $finding->link,
+            $finding->cve,
+            $finding->severity === CoreSeverity::NotRated ? null : $finding->severity->value,
+            $after === null ? $fix : null,
+            $finding->isExploited(),
+            $id,
+            $firstSeenAt,
+            $after,
+            $finding->aliases,
+        );
+    }
+
+    /**
+     * The core's stored shape of this finding, which the core's reconciler matches by key, CVE and aliases.
+     *
+     * @return array<string, mixed>
+     */
+    public function toCoreArray(): array
+    {
+        return [
+            'ecosystem' => Ecosystem::Composer->value,
+            'package' => $this->package,
+            'installed' => $this->installedVersion,
+            'advisory_id' => $this->advisoryId,
+            'title' => $this->title,
+            'severity' => $this->severity !== null ? CoreSeverity::parse($this->severity)->value : CoreSeverity::NotRated->value,
+            'link' => $this->link,
+            'cve' => $this->cve,
+            'fixed_in' => $this->fixedIn ?? ($this->fixedAfter !== null ? '>' . $this->fixedAfter : null),
+            'aliases' => $this->aliases,
+        ];
+    }
+
+    /**
+     * The key the core knows this finding by (and the one 1.0's rows already have).
+     */
+    public function coreKey(): string
+    {
+        return Ecosystem::Composer->value . ':' . $this->package . ':' . $this->advisoryId;
     }
 
     public function key(): string
@@ -60,6 +121,7 @@ class Finding
             $this->id,
             $this->firstSeenAt,
             $this->fixedAfter,
+            $this->aliases,
         );
     }
 

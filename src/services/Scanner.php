@@ -4,113 +4,48 @@ declare(strict_types=1);
 
 namespace ruvelo\securityalerts\services;
 
+use Ruvelo\SecurityAdvisories\Ecosystem;
+use Ruvelo\SecurityAdvisories\Scanner as Core;
 use ruvelo\securityalerts\exceptions\SourceException;
 use ruvelo\securityalerts\models\Finding;
 use ruvelo\securityalerts\models\Findings;
 use ruvelo\securityalerts\models\ScanResult;
-use ruvelo\securityalerts\sources\AdvisoryClient;
-use ruvelo\securityalerts\sources\KevCatalogue;
 
 /**
  * Works out which known vulnerabilities apply to this site right now. Reads, never writes.
+ * Reading, asking, matching and marking what is exploited are the shared core's.
  */
 class Scanner
 {
-    public const CORE_PACKAGE = 'craftcms/cms';
+    public const CORE_PACKAGE = CraftPackages::CORE_PACKAGE;
 
-    /**
-     * @param string|null $coreVersion Craft's own idea of its version, used when composer.lock does not list it
-     */
     public function __construct(
-        private readonly ComposerLock $composerLock,
-        private readonly AdvisoryClient $advisories,
-        private readonly KevCatalogue $kev,
-        private readonly AdvisoryMatcher $matcher,
-        private readonly ?string $coreVersion = null,
+        private readonly Core $core,
+        private readonly CraftPackages $packages,
     ) {
     }
 
     /**
-     * @throws SourceException When Packagist cannot be reached: without it there is no answer to give
+     * @throws SourceException When the packages could not be checked at all: without an answer there is nothing to give
      */
-    public function scan(): ScanResult
+    public function scan(bool $fresh = false): ScanResult
     {
-        $warnings = [];
-        $installed = [];
+        $report = $this->core->scan($fresh);
 
-        try {
-            $installed = $this->composerLock->packages();
-        } catch (SourceException $e) {
-            $warnings[] = $e->getMessage();
+        if (!$report->isCheckedFor(Ecosystem::Composer)) {
+            throw new SourceException(implode(' ', [...$this->packages->warnings(), ...$report->problems]));
         }
 
-        if (!isset($installed[self::CORE_PACKAGE])) {
-            $core = $this->coreVersion !== null ? trim($this->coreVersion) : '';
-            if (preg_match('/^\d+\.\d+/', $core) === 1) {
-                $installed[self::CORE_PACKAGE] = $core;
-            } else {
-                $warnings[] = 'The Craft version could not be read, so core advisories were not checked.';
-            }
-        }
-        if ($installed === []) {
-            throw new SourceException('There is nothing to check: no Craft version and no composer.lock.');
+        $warnings = [...$this->packages->warnings(), ...$report->problems];
+        foreach ($report->notes as $note) {
+            $warnings[] = $note->message;
         }
 
-        $advisories = $this->advisories->fetch(array_keys($installed));
-
-        try {
-            $exploitedCves = $this->kev->exploitedCves();
-        } catch (SourceException $e) {
-            $exploitedCves = [];
-            $warnings[] = 'The CISA exploited-vulnerabilities list could not be fetched, so nothing is flagged as exploited this time: '
-                . $e->getMessage();
-        }
-
-        $findings = [];
-        foreach ($advisories as $package => $list) {
-            if (!isset($installed[$package])) {
-                continue;
-            }
-            foreach ($list as $advisory) {
-                $finding = $this->toFinding($package, $installed[$package], $advisory, $exploitedCves);
-                if ($finding !== null) {
-                    $findings[$finding->key()] = $finding;
-                }
-            }
-        }
-
-        return new ScanResult(Findings::sorted(array_values($findings)), $warnings, count($installed));
-    }
-
-    /**
-     * @param array<string, mixed> $advisory
-     * @param array<string, true> $exploitedCves
-     */
-    private function toFinding(string $package, string $version, array $advisory, array $exploitedCves): ?Finding
-    {
-        $constraint = $advisory['affectedVersions'] ?? null;
-        $id = $advisory['advisoryId'] ?? null;
-        if (!is_string($constraint) || !is_string($id) || !$this->matcher->affects($version, $constraint)) {
-            return null;
-        }
-        $cve = $this->text($advisory['cve'] ?? null);
-
-        return new Finding(
-            $package,
-            $version,
-            $id,
-            $this->text($advisory['title'] ?? null) ?? $id,
-            $this->text($advisory['link'] ?? null),
-            $cve,
-            $this->text($advisory['severity'] ?? null),
-            $this->matcher->fixedIn($version, $constraint),
-            $cve !== null && isset($exploitedCves[strtoupper($cve)]),
-            fixedAfter: $this->matcher->fixedAfter($version, $constraint),
+        return new ScanResult(
+            Findings::sorted(array_map(static fn($f): Finding => Finding::fromCore($f), $report->findings)),
+            $warnings,
+            $report->packageCount(),
+            $report,
         );
-    }
-
-    private function text(mixed $value): ?string
-    {
-        return is_string($value) && trim($value) !== '' ? trim($value) : null;
     }
 }

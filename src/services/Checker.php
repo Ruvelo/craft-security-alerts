@@ -21,6 +21,8 @@ class Checker extends Component
 
     public const STATE_LAST_CHECK = 'last_check';
 
+    public const STATE_LAST_SOURCE = 'last_source';
+
     public function __construct(
         private readonly Scanner $scanner,
         private readonly Reconciler $reconciler,
@@ -37,8 +39,11 @@ class Checker extends Component
     public function run(): CheckOutcome
     {
         $result = $this->scanner->scan();
-        $changes = $this->reconciler->reconcile($result->findings);
+        $changes = $this->reconciler->reconcile($result);
         $this->state->set(self::STATE_LAST_CHECK, gmdate('Y-m-d H:i:s'));
+        if ($result->source() !== null) {
+            $this->state->set(self::STATE_LAST_SOURCE, $result->source());
+        }
 
         if ($result->findings !== []) {
             $this->trigger(self::EVENT_FINDINGS_FOUND, new FindingsEvent([

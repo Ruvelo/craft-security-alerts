@@ -32,6 +32,19 @@ class InMemoryStore implements FindingStoreInterface
         ];
     }
 
+    /**
+     * A row as an earlier release left it: stored, and already told to whoever was to be told.
+     */
+    public function seed(Finding $finding, bool $notified = true): void
+    {
+        $id = $this->next++;
+        $this->rows[$id] = [
+            'finding' => $this->with($finding, $id),
+            'notified' => $notified,
+            'notified_exploited' => $notified && $finding->exploited,
+        ];
+    }
+
     public function update(Finding $finding): void
     {
         foreach ($this->rows as $id => $row) {
@@ -87,6 +100,7 @@ class InMemoryStore implements FindingStoreInterface
             $id,
             '2026-10-12 00:00:00',
             $f->fixedAfter,
+            $f->aliases,
         );
     }
 }

@@ -45,6 +45,14 @@ class SettingsTest extends TestCase
         $this->assertSame('medium', $bad->minimum()->value, 'an unknown value falls back to medium');
     }
 
+    public function testTheAdvisorySourceDefaultsToValtryAndAcceptsPublicOnly(): void
+    {
+        $this->assertSame('valtry', (new Settings())->advisorySource);
+        $this->assertTrue((new Settings(['advisorySource' => 'public']))->validate());
+        $this->assertFalse((new Settings(['advisorySource' => 'elsewhere']))->validate());
+        $this->assertSame(['valtry', 'public'], array_keys(Settings::sourceOptions()));
+    }
+
     public function testSeverityOptionsListEveryLevel(): void
     {
         $this->assertSame(['low', 'medium', 'high', 'critical'], array_keys(Settings::severityOptions()));

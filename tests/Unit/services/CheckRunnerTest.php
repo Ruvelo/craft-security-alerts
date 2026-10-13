@@ -14,7 +14,9 @@ use ruvelo\securityalerts\models\ScanResult;
 use ruvelo\securityalerts\services\Checker;
 use ruvelo\securityalerts\services\CheckRunner;
 use ruvelo\securityalerts\services\Scanner;
+use ruvelo\securityalerts\tests\Fake\FakeClient;
 use ruvelo\securityalerts\tests\Fake\Findings;
+use ruvelo\securityalerts\tests\Fake\Wiring;
 
 class CheckRunnerTest extends TestCase
 {
@@ -140,7 +142,7 @@ class CheckRunnerTest extends TestCase
         $this->exec($runner, json: true);
 
         $data = json_decode($this->out[0], true, 512, JSON_THROW_ON_ERROR);
-        $this->assertSame(['exploited' => 0, 'total' => 0, 'packages_checked' => 42, 'warnings' => [], 'findings' => []], $data);
+        $this->assertSame(['exploited' => 0, 'total' => 0, 'packages_checked' => 42, 'warnings' => [], 'source' => null, 'sources' => [], 'findings' => []], $data);
     }
 
     public function testDryRunOnlyScans(): void
@@ -168,5 +170,31 @@ class CheckRunnerTest extends TestCase
         $this->exec($runner);
 
         $this->assertSame('Warning: composer.lock was not found', $this->out[0]);
+    }
+
+    public function testTheDataSourceIsInTheSummaryAndTheJson(): void
+    {
+        $client = new FakeClient();
+        $client->valtryUp = true;
+        $scanner = Wiring::scanner($client, 'valtry');
+        $checker = $this->createMock(Checker::class);
+        $runner = new CheckRunner($scanner, $checker);
+
+        $this->assertSame(0, $this->exec($runner, dryRun: true));
+        $this->assertStringContainsString('packages checked via Valtry, signed.', implode("\n", $this->out));
+
+        $this->exec($runner, json: true, dryRun: true);
+        $data = json_decode($this->out[0], true);
+        $this->assertSame('valtry', $data['source']);
+        $this->assertSame(['composer' => 'valtry'], $data['sources']);
+    }
+
+    public function testThePublicFeedsAreNamedToo(): void
+    {
+        $runner = new CheckRunner(Wiring::scanner(new FakeClient()), $this->createMock(Checker::class));
+
+        $this->exec($runner, dryRun: true);
+
+        $this->assertStringContainsString('packages checked via public feeds.', implode("\n", $this->out));
     }
 }

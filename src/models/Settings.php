@@ -7,6 +7,7 @@ namespace ruvelo\securityalerts\models;
 use Craft;
 use craft\base\Model;
 use craft\helpers\App;
+use Ruvelo\SecurityAdvisories\Scanner as Core;
 
 /**
  * Plugin settings. They live in project config, so they travel with the rest of the site's config.
@@ -24,6 +25,13 @@ class Settings extends Model
 
     /** When no cron job runs the console command, check at most once a day when someone uses the control panel. */
     public bool $checkOnCpUse = false;
+
+    /**
+     * Where advisories come from: "valtry" asks Valtry's signed Advisory API first (package names only, never versions)
+     * and uses the public feeds whenever it cannot answer; "public" never contacts Valtry.
+     * RUVELO_ADVISORIES_SOURCE=public in the environment wins over this setting.
+     */
+    public string $advisorySource = SourceLabel::VALTRY;
 
     /**
      * @return list<string> Valid addresses only
@@ -58,6 +66,33 @@ class Settings extends Model
     }
 
     /**
+     * Whether Valtry is never contacted: the setting says so, or the environment does (and it wins).
+     */
+    public function usesPublicFeedsOnly(): bool
+    {
+        return Core::source($this->advisorySource) === Core::SOURCE_PUBLIC;
+    }
+
+    /**
+     * Whether the environment alone keeps every request off Valtry, whatever the setting says.
+     */
+    public static function sourceIsForcedPublic(): bool
+    {
+        return Core::source(SourceLabel::VALTRY) === Core::SOURCE_PUBLIC;
+    }
+
+    /**
+     * @return array<string, string> Source value => label
+     */
+    public static function sourceOptions(): array
+    {
+        return [
+            SourceLabel::VALTRY => Craft::t('security-alerts', 'Valtry (default)'),
+            SourceLabel::PUBLIC => Craft::t('security-alerts', 'Public feeds only'),
+        ];
+    }
+
+    /**
      * @return array<int|string, mixed>
      */
     protected function defineRules(): array
@@ -65,6 +100,7 @@ class Settings extends Model
         $rules = parent::defineRules();
         $rules[] = [['enabled', 'checkOnCpUse'], 'boolean'];
         $rules[] = [['minimumSeverity'], 'in', 'range' => array_map(static fn(Severity $s): string => $s->value, Severity::cases())];
+        $rules[] = [['advisorySource'], 'in', 'range' => array_keys(self::sourceOptions())];
         $rules[] = [['emails'], 'string', 'max' => 2000];
         $rules[] = [['emails'], function(string $attribute): void {
             $parsed = App::parseEnv($this->emails);

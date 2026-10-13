@@ -30,6 +30,19 @@
   errors: settings.getErrors('minimumSeverity'),
 }) }}
 
+{{ forms.selectField({
+  label: 'Advisory source'|t('security-alerts'),
+  instructions: 'Where advisories come from. Valtry’s Advisory API gives the same findings as the public feeds (Packagist and CISA), signed, in one request, and the public feeds answer automatically whenever it cannot. Public feeds only never contacts Valtry.'|t('security-alerts'),
+  id: 'advisorySource',
+  name: 'advisorySource',
+  options: sourceOptions,
+  value: settings.advisorySource,
+  errors: settings.getErrors('advisorySource'),
+}) }}
+{% if forcedPublic %}
+  <p class="warning with-icon">{{ 'RUVELO_ADVISORIES_SOURCE=public is set in the environment, so Valtry is not contacted whatever this setting says.'|t('security-alerts') }}</p>
+{% endif %}
+
 {{ forms.lightswitchField({
   label: 'Check when the control panel is used'|t('security-alerts'),
   instructions: 'A fallback for sites without a cron job: when someone opens the control panel and no check has run for a day, a check is added to the queue. Running “php craft security-alerts/check” from cron is the more reliable way.'|t('security-alerts'),
@@ -41,5 +54,5 @@
 
 <div class="rv-sa-note">
   <p><strong>{{ 'What leaves this server'|t('security-alerts') }}</strong></p>
-  <p>{{ 'Only package names are sent: the runtime packages in composer.lock go to packagist.org to fetch their advisories, and the list of exploited vulnerabilities is downloaded from cisa.gov. Versions are matched on this server, so nobody learns which version you run. No site URL, no content, no user data, no account and no key. Your server’s address is visible to those two sites, as it is for any request.'|t('security-alerts') }}</p>
+  <p>{{ 'Only package names are sent. By default the runtime packages in composer.lock go to Valtry’s Advisory API, with a random nonce and never versions; its answers are signed with a key built into the plugin and checked here, and the exploited-vulnerability verdict comes with them. If it is unreachable, slow, answers with an error or sends an answer that does not verify, the same names go to packagist.org and the list of exploited vulnerabilities is downloaded from cisa.gov instead. With “Public feeds only”, or RUVELO_ADVISORIES_SOURCE=public in the environment, Valtry is never contacted. Versions are always matched on this server, so nobody learns which version you run. No site URL, no content, no user data, no account and no key. Your server’s address is visible to whoever answers, as it is for any request.'|t('security-alerts') }}</p>
 </div>

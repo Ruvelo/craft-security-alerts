@@ -19,6 +19,7 @@
       {{ 'Not checked yet.'|t('security-alerts') }}
     {% endif %}
     {{ '{n, plural, =0{No open findings.} =1{1 open finding.} other{# open findings.}}'|t('security-alerts', {n: open}) }}
+    {% if source %}<br>{{ 'Data source: {source}.'|t('security-alerts', {source: source}) }}{% endif %}
   </p>
   <form method="post" accept-charset="UTF-8">
     {{ csrfInput() }}
@@ -73,6 +74,10 @@
 
 <div class="rv-sa-note">
   <p><strong>{{ 'What leaves this server'|t('security-alerts') }}</strong></p>
-  <p>{{ 'Only the names of the packages in composer.lock go to packagist.org, and a plain download from cisa.gov. Versions are matched here, so nobody learns which version you run.'|t('security-alerts') }}</p>
+  {% if viaPublicOnly %}
+    <p>{{ 'Only the names of the packages in composer.lock go to packagist.org, and a plain download from cisa.gov. Versions are matched here, so nobody learns which version you run.'|t('security-alerts') }}</p>
+  {% else %}
+    <p>{{ 'Only the names of the packages in composer.lock go to Valtry’s Advisory API, with a random nonce, never versions. Its answers are signed and checked here. If it cannot answer, the same names go to packagist.org instead, plus a plain download from cisa.gov. Versions are always matched here, so nobody learns which version you run. “Public feeds only” in the plugin settings keeps every request off Valtry.'|t('security-alerts') }}</p>
+  {% endif %}
   <p class="light">{{ 'For a daily check without relying on visits to the control panel, run “php craft security-alerts/check” from cron.'|t('security-alerts') }}</p>
 </div>

@@ -5,6 +5,9 @@ declare(strict_types=1);
 namespace ruvelo\securityalerts\tests\Unit\models;
 
 use PHPUnit\Framework\TestCase;
+use Ruvelo\SecurityAdvisories\Ecosystem;
+use Ruvelo\SecurityAdvisories\Finding as CoreFinding;
+use Ruvelo\SecurityAdvisories\Severity;
 use ruvelo\securityalerts\models\Finding;
 use ruvelo\securityalerts\models\Findings;
 use ruvelo\securityalerts\tests\Fake\Findings as Make;
@@ -54,5 +57,22 @@ class FindingTest extends TestCase
 
         $this->assertSame(['PKSA-3', 'PKSA-2', 'PKSA-1'], array_map(static fn(Finding $f): string => $f->advisoryId, $sorted));
         $this->assertSame(1, Findings::exploitedCount($sorted));
+    }
+
+    public function testCoreFindingsKeepTheirShapeIncludingTheLaterThanFix(): void
+    {
+        $core = new CoreFinding(Ecosystem::Composer, 'acme/x', '1.0.0', 'PKSA-9', 'T', Severity::NotRated, null, 'CVE-1', '>1.2.0', aliases: ['GHSA-9']);
+
+        $finding = Finding::fromCore($core);
+
+        $this->assertNull($finding->severity, 'unrated stays null');
+        $this->assertSame(Severity::High->value, $finding->severityLevel()->value);
+        $this->assertNull($finding->fixedIn);
+        $this->assertSame('1.2.0', $finding->fixedAfter);
+        $this->assertSame('later than 1.2.0', $finding->fixedLabel());
+        $this->assertSame(['GHSA-9'], $finding->aliases);
+        $this->assertSame('composer:acme/x:PKSA-9', $finding->coreKey());
+        $this->assertSame('>1.2.0', $finding->toCoreArray()['fixed_in']);
+        $this->assertSame('not_rated', $finding->toCoreArray()['severity']);
     }
 }

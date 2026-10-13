@@ -10,6 +10,7 @@ use DateTime;
 use DateTimeZone;
 use ruvelo\securityalerts\assets\AlertsAsset;
 use ruvelo\securityalerts\models\Findings;
+use ruvelo\securityalerts\models\SourceLabel;
 use ruvelo\securityalerts\Plugin;
 use ruvelo\securityalerts\services\Checker;
 use ruvelo\securityalerts\services\FindingStore;
@@ -53,12 +54,17 @@ class SecurityAlertsUtility extends Utility
             return $view->renderTemplate('security-alerts/_denied');
         }
 
-        $lastCheck = (new State())->get(Checker::STATE_LAST_CHECK);
+        $settings = Plugin::getInstance()?->getSettings();
+        $state = new State();
+        $lastCheck = $state->get(Checker::STATE_LAST_CHECK);
+        $source = $state->get(Checker::STATE_LAST_SOURCE);
 
         return $view->renderTemplate('security-alerts/_utility', [
             'findings' => Findings::sorted((new FindingStore())->all()),
             'lastCheck' => $lastCheck !== null ? new DateTime($lastCheck, new DateTimeZone('UTC')) : null,
-            'settings' => Plugin::getInstance()?->getSettings(),
+            'source' => $source !== null ? SourceLabel::long($source) : null,
+            'viaPublicOnly' => $settings?->usesPublicFeedsOnly() ?? false,
+            'settings' => $settings,
         ]);
     }
 }

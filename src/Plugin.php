@@ -16,19 +16,15 @@ use craft\services\Utilities;
 use craft\web\Request as WebRequest;
 use ruvelo\securityalerts\jobs\CheckJob;
 use ruvelo\securityalerts\models\Settings;
-use ruvelo\securityalerts\services\AdvisoryMatcher;
 use ruvelo\securityalerts\services\Checker;
 use ruvelo\securityalerts\services\CheckRunner;
-use ruvelo\securityalerts\services\ComposerLock;
 use ruvelo\securityalerts\services\DailyTrigger;
 use ruvelo\securityalerts\services\FindingStore;
 use ruvelo\securityalerts\services\Notifier;
 use ruvelo\securityalerts\services\Reconciler;
 use ruvelo\securityalerts\services\Scanner;
+use ruvelo\securityalerts\services\ScannerFactory;
 use ruvelo\securityalerts\services\State;
-use ruvelo\securityalerts\sources\AdvisoryClient;
-use ruvelo\securityalerts\sources\GuzzleFetcher;
-use ruvelo\securityalerts\sources\KevCatalogue;
 use ruvelo\securityalerts\utilities\SecurityAlertsUtility;
 use ruvelo\securityalerts\widgets\SecurityAlertsWidget;
 use Throwable;
@@ -43,7 +39,7 @@ class Plugin extends BasePlugin
 {
     public const PERMISSION_VIEW = 'securityAlerts-view';
 
-    public string $schemaVersion = '1.0.0';
+    public string $schemaVersion = '1.1.0';
 
     public bool $hasCpSettings = true;
 
@@ -138,15 +134,7 @@ class Plugin extends BasePlugin
 
     public function getScanner(): Scanner
     {
-        $fetcher = new GuzzleFetcher(Craft::createGuzzleClient());
-
-        return new Scanner(
-            new ComposerLock(Craft::getAlias('@root/composer.lock')),
-            new AdvisoryClient($fetcher),
-            new KevCatalogue($fetcher),
-            new AdvisoryMatcher(),
-            Craft::$app->getVersion(),
-        );
+        return ScannerFactory::create($this->getSettings());
     }
 
     public function getCheckRunner(): CheckRunner
@@ -163,6 +151,8 @@ class Plugin extends BasePlugin
     {
         return Craft::$app->getView()->renderTemplate('security-alerts/_settings', [
             'settings' => $this->getSettings(),
+            'sourceOptions' => Settings::sourceOptions(),
+            'forcedPublic' => Settings::sourceIsForcedPublic(),
         ]);
     }
 }

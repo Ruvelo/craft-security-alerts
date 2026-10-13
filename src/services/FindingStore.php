@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace ruvelo\securityalerts\services;
 
+use Craft;
 use craft\db\Query;
 use craft\helpers\Db;
 use ruvelo\securityalerts\models\Finding;
@@ -14,6 +15,8 @@ use ruvelo\securityalerts\models\Finding;
 class FindingStore implements FindingStoreInterface
 {
     public const TABLE = '{{%securityalerts_findings}}';
+
+    private ?bool $hasAliases = null;
 
     public function all(): array
     {
@@ -35,7 +38,7 @@ class FindingStore implements FindingStoreInterface
             'exploited' => $finding->exploited,
             'notified' => false,
             'notifiedExploited' => false,
-        ]);
+        ] + $this->aliasColumn($finding));
     }
 
     public function update(Finding $finding): void
@@ -49,7 +52,7 @@ class FindingStore implements FindingStoreInterface
             'fixedIn' => $finding->fixedIn,
             'fixedAfter' => $finding->fixedAfter,
             'exploited' => $finding->exploited,
-        ], [
+        ] + $this->aliasColumn($finding), [
             'package' => $finding->package,
             'advisoryId' => $finding->advisoryId,
         ]);
@@ -96,7 +99,7 @@ class FindingStore implements FindingStoreInterface
      */
     private function hydrate(array $rows): array
     {
-        return array_values(array_map(static fn(array $r): Finding => new Finding(
+        return array_values(array_map(fn(array $r): Finding => new Finding(
             (string)$r['package'],
             (string)$r['installedVersion'],
             (string)$r['advisoryId'],
@@ -109,6 +112,30 @@ class FindingStore implements FindingStoreInterface
             (int)$r['id'],
             (string)$r['dateCreated'],
             $r['fixedAfter'] !== null ? (string)$r['fixedAfter'] : null,
+            $this->decodeAliases($r['aliases'] ?? null),
         ), $rows));
+    }
+
+    /**
+     * The aliases column arrives with the 1.1.0 migration. A check that runs between updating the
+     * code and running the migration still works, it just remembers no aliases yet.
+     *
+     * @return array<string, string|null>
+     */
+    private function aliasColumn(Finding $finding): array
+    {
+        $this->hasAliases ??= Craft::$app->getDb()->columnExists(self::TABLE, 'aliases');
+
+        return $this->hasAliases ? ['aliases' => $finding->aliases === [] ? null : json_encode($finding->aliases, JSON_THROW_ON_ERROR)] : [];
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function decodeAliases(mixed $value): array
+    {
+        $decoded = is_string($value) ? json_decode($value, true) : null;
+
+        return is_array($decoded) ? array_values(array_filter($decoded, 'is_string')) : [];
     }
 }

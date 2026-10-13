@@ -10,8 +10,11 @@ use RecursiveDirectoryIterator;
 use RecursiveIteratorIterator;
 
 /**
- * House rule: the README mentions Valtry in exactly two places. Nothing a user sees in the
- * control panel, an email or the command line may mention it, link to it, or carry a campaign tag.
+ * House rule: the README promotes Valtry in exactly two places. The advisory source is a different
+ * thing: Valtry is named, neutrally, where the plugin says which data source answers and what it
+ * sends (the settings, the utility page, the console summary and the README's disclosure). Nothing
+ * else a user sees in the control panel, an email or the command line may mention it, link to it,
+ * or carry a campaign tag.
  */
 class ValtryRuleTest extends TestCase
 {
@@ -34,22 +37,44 @@ class ValtryRuleTest extends TestCase
         return $files;
     }
 
-    public function testNothingTheUserSeesMentionsValtry(): void
+    /** Where the data source is named, and why. */
+    private const MAY_NAME_THE_SOURCE = [
+        '/src/models/Settings.php' => 'the setting\'s label',
+        '/src/models/SourceLabel.php' => 'the neutral name of the source',
+        '/src/models/ScanResult.php' => 'a comment on the source label',
+        '/src/services/ScannerFactory.php' => 'the wiring',
+        '/src/services/Scanner.php' => 'a comment on the wiring',
+        '/src/templates/_settings.twig' => 'the setting and the disclosure',
+        '/src/templates/_utility.twig' => 'the disclosure',
+    ];
+
+    public function testNoCampaignTagAndNoLinkToValtryReachesTheUser(): void
     {
         $files = $this->shippedFiles();
         $this->assertGreaterThan(20, count($files));
 
         foreach ($files as $file) {
             $content = (string)file_get_contents($file);
-            $this->assertDoesNotMatchRegularExpression('/valtry|utm_campaign|utm_source/i', $content, $file);
+            $this->assertDoesNotMatchRegularExpression('/utm_campaign|utm_source|valtry\.co\.uk/i', $content, $file);
         }
     }
 
-    public function testTheReadmeMentionsItExactlyTwice(): void
+    public function testValtryIsNamedOnlyWhereTheSourceIsDisclosed(): void
+    {
+        foreach ($this->shippedFiles() as $file) {
+            $path = substr($file, strlen(self::ROOT));
+            if (isset(self::MAY_NAME_THE_SOURCE[$path]) || !str_contains($file, '/src/')) {
+                continue;
+            }
+            $this->assertDoesNotMatchRegularExpression('/valtry/i', (string)file_get_contents($file), $file);
+        }
+    }
+
+    public function testTheReadmePromotesItExactlyTwiceAndOtherwiseOnlyLinksTheApiPage(): void
     {
         $readme = (string)file_get_contents(self::ROOT . '/README.md');
 
-        $this->assertSame(2, preg_match_all('/valtry\.co\.uk/i', $readme));
+        $this->assertSame(2, preg_match_all('/valtry\.co\.uk\/\?utm_/i', $readme));
         $this->assertSame(
             1,
             preg_match_all('/^Watching many sites\? \[Valtry\]\(https:\/\/valtry\.co\.uk\/\?utm_source=ruvelo&utm_medium=github&utm_campaign=craft-security-alerts\) checks every site from the outside, daily\.$/m', $readme),
@@ -59,6 +84,14 @@ class ValtryRuleTest extends TestCase
             $readme,
         );
         $this->assertSame(1, preg_match_all('/^## Features/m', $readme));
+
+        // Every other mention is a plain link to the API's documentation, with no campaign tag.
+        $others = preg_replace('/https:\/\/valtry\.co\.uk\/\?utm_[^\s)]*/', '', $readme);
+        preg_match_all('/https:\/\/valtry\.co\.uk[^\s)\]]*/i', (string)$others, $m);
+        $this->assertNotSame([], $m[0]);
+        foreach ($m[0] as $link) {
+            $this->assertSame('https://valtry.co.uk/docs/api/advisories', $link);
+        }
     }
 
     public function testTheEmailAndCommandLineOutputCarryNoMarketing(): void

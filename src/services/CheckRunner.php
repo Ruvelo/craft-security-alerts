@@ -7,6 +7,7 @@ namespace ruvelo\securityalerts\services;
 use ruvelo\securityalerts\exceptions\SourceException;
 use ruvelo\securityalerts\models\Finding;
 use ruvelo\securityalerts\models\ScanResult;
+use ruvelo\securityalerts\models\SourceLabel;
 
 /**
  * The logic behind `php craft security-alerts/check`, apart from the console plumbing, so that it can be tested.
@@ -63,6 +64,8 @@ class CheckRunner
             'total' => count($result->findings),
             'packages_checked' => $result->packagesChecked,
             'warnings' => $result->warnings,
+            'source' => $result->source(),
+            'sources' => $result->report->sources ?? [],
             'findings' => array_map(static fn(Finding $f): array => $f->toArray(), $result->findings),
         ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
     }
@@ -77,7 +80,7 @@ class CheckRunner
             $lines[] = 'Warning: ' . $warning;
         }
         if ($result->findings === []) {
-            $lines[] = sprintf('No known vulnerabilities found in %d packages.', $result->packagesChecked);
+            $lines[] = sprintf('No known vulnerabilities found in %d packages%s.', $result->packagesChecked, $this->via($result));
 
             return $lines;
         }
@@ -98,12 +101,20 @@ class CheckRunner
             );
         }
         $lines[] = sprintf(
-            "\n%d findings, %d exploited, in %d packages checked.",
+            "\n%d findings, %d exploited, in %d packages checked%s.",
             count($result->findings),
             count($result->exploited()),
             $result->packagesChecked,
+            $this->via($result),
         );
 
         return $lines;
+    }
+
+    private function via(ScanResult $result): string
+    {
+        $source = $result->source();
+
+        return $source !== null ? ' ' . SourceLabel::short($source) : '';
     }
 }
