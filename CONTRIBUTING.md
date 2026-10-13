@@ -4,7 +4,7 @@ Thanks for helping! Bug reports, false positives, docs fixes and features are al
 
 ## Before you start
 
-- **A wrong or missing finding:** [open an issue](https://github.com/Ruvelo/craft-security-alerts/issues/new/choose) with the package, the installed version and the advisory id. Advisories come from Packagist, so one that is wrong at the source should be fixed in [FriendsOfPHP/security-advisories](https://github.com/FriendsOfPHP/security-advisories) or the GitHub advisory database too.
+- **A wrong or missing finding:** [open an issue](https://github.com/Ruvelo/craft-security-alerts/issues/new/choose) with the package, the installed version and the advisory id. Advisories come from Valtry and Packagist, so one that is wrong at the source should be fixed in [FriendsOfPHP/security-advisories](https://github.com/FriendsOfPHP/security-advisories) or the GitHub advisory database too.
 - **Features:** open an issue first if it is more than a small change.
 - **Security issues:** don't open an issue. See [SECURITY.md](https://github.com/Ruvelo/.github/blob/main/SECURITY.md).
 
@@ -12,8 +12,11 @@ Thanks for helping! Bug reports, false positives, docs fixes and features are al
 
 You need PHP 8.2+ and Composer. The unit tests need no database and no Craft install: Craft comes in as a dev dependency, and the tests mock everything else.
 
+Scanning, sources, matching and comparing are in the shared core, [`ruvelo/security-advisories`](https://github.com/Ruvelo/security-advisories); a wrong or missing finding is usually fixed there. Until the core is on Packagist, point Composer at GitHub first, and don't commit that to `composer.json`:
+
 ```bash
 git clone https://github.com/<you>/craft-security-alerts && cd craft-security-alerts
+composer config repositories.core vcs https://github.com/Ruvelo/security-advisories
 composer install
 composer check
 ```
@@ -24,9 +27,9 @@ composer check
 | `composer lint` | ECS with `craftcms/ecs` (`composer fix` applies fixes) |
 | `composer analyse` | PHPStan level 8 with `craftcms/phpstan` |
 
-CI also installs the plugin into a real Craft project on MySQL, runs the console command and loads the utility page. To do the same locally, create a project with `composer create-project craftcms/craft`, add this checkout as a `path` repository, and run `php craft plugin/install security-alerts`.
+CI also installs the plugin into a real Craft project on MySQL, runs the console command and loads the utility page. To do the same locally, create a project with `composer create-project craftcms/craft`, add this checkout as a `path` repository (and the core's `vcs` repository, as above), and run `php craft plugin/install security-alerts`.
 
-Tests never touch the network. Packagist and CISA answers come from the fixtures in `tests/_files/`.
+Tests never touch the network. A fake PSR-18 client plays Packagist, CISA and Valtry (signing its answers with a key made for the test) from the fixtures in `tests/_files/`.
 
 ## Making a change
 
