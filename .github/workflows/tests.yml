@@ -18,6 +18,9 @@ jobs:
           extensions: mbstring, intl, gd, zip, pdo_mysql
           coverage: none
 
+      - name: Use the core from GitHub until it is on Packagist
+        run: composer config repositories.core vcs https://github.com/Ruvelo/security-advisories
+
       - name: Install dependencies
         run: composer update --prefer-dist --no-interaction --no-progress
 
@@ -44,6 +47,9 @@ jobs:
           php-version: ${{ matrix.php }}
           extensions: mbstring, intl, gd, zip, pdo_mysql
           coverage: none
+
+      - name: Use the core from GitHub until it is on Packagist
+        run: composer config repositories.core vcs https://github.com/Ruvelo/security-advisories
 
       - name: Install dependencies
         run: composer update --${{ matrix.stability }} --prefer-dist --no-interaction --no-progress
@@ -99,6 +105,7 @@ jobs:
       - name: Require the plugin from this checkout
         working-directory: site
         run: |
+          composer config repositories.core vcs https://github.com/Ruvelo/security-advisories
           composer config repositories.plugin '{"type":"path","url":"../plugin","options":{"symlink":false}}'
           composer require ruvelo/craft-security-alerts:@dev --no-interaction --no-progress
           composer show ruvelo/craft-security-alerts | grep -E '^(name|versions|requires)'
@@ -128,6 +135,7 @@ jobs:
           php craft plugin/install security-alerts
           php craft plugin/list | grep security-alerts
           mysql -h 127.0.0.1 -uroot -proot craft -e 'DESCRIBE securityalerts_findings; SHOW INDEX FROM securityalerts_findings'
+          mysql -h 127.0.0.1 -uroot -proot craft -N -e 'SELECT column_name FROM information_schema.columns WHERE table_schema="craft" AND table_name="securityalerts_findings" AND column_name="aliases"' | grep -q aliases
 
       - name: Console command with real network access
         working-directory: site
@@ -139,7 +147,7 @@ jobs:
           cat "$RUNNER_TEMP/check.err"
           cat "$RUNNER_TEMP/check.json"
           echo "exit code: $code"
-          python3 -I -c 'import json,sys; d=json.load(open(sys.argv[1])); assert {"exploited","total","packages_checked","warnings","findings"} <= d.keys(); assert d["packages_checked"] > 10; print("valid JSON,", d["total"], "findings,", d["packages_checked"], "packages")' "$RUNNER_TEMP/check.json"
+          python3 -I -c 'import json,sys; d=json.load(open(sys.argv[1])); assert {"exploited","total","packages_checked","warnings","findings","source","sources"} <= d.keys(); assert d["source"] in ("valtry","public","mixed"); assert d["packages_checked"] > 10; print("valid JSON,", d["total"], "findings,", d["packages_checked"], "packages, answered by", d["source"])' "$RUNNER_TEMP/check.json"
           [ "$code" -le 1 ] || { echo "::error::exit code $code means a source failed"; exit 1; }
 
       - name: Console command options and exit codes
@@ -191,6 +199,36 @@ jobs:
           [ "$mails" -eq 1 ]
           grep -q 'Exploited' "$RUNNER_TEMP/mail.txt"
 
+      - name: Upgrading from 1.0 sends nothing new, on either source
+        working-directory: site
+        run: |
+          # 1.0's table had no aliases column. Take it away, as it was, then run the migration that adds it.
+          mysql -h 127.0.0.1 -uroot -proot craft -e 'ALTER TABLE securityalerts_findings DROP COLUMN aliases'
+          mysql -h 127.0.0.1 -uroot -proot craft -e "DELETE FROM migrations WHERE track='plugin:security-alerts' AND name <> 'Install'"
+          rows() { mysql -h 127.0.0.1 -uroot -proot craft -N -e "SELECT GROUP_CONCAT(package,'|',advisoryId ORDER BY id) FROM securityalerts_findings"; }
+          before=$(rows)
+          [ -n "$before" ]
+
+          # A check between updating the code and running the migration must not break.
+          php craft security-alerts/check --dry-run > /dev/null || [ $? -le 1 ]
+
+          php craft migrate/up --plugin=security-alerts --interactive=0
+          mysql -h 127.0.0.1 -uroot -proot craft -N -e 'SELECT column_name FROM information_schema.columns WHERE table_schema="craft" AND table_name="securityalerts_findings" AND column_name="aliases"' | grep -q aliases
+
+          for source in public default; do
+            if [ "$source" = public ]; then export RUVELO_ADVISORIES_SOURCE=public; else unset RUVELO_ADVISORIES_SOURCE; fi
+            set +e
+            php craft security-alerts/check --json > "$RUNNER_TEMP/upgrade-$source.json"; code=$?
+            set -e
+            [ "$code" -le 1 ]
+            python3 -I -c 'import json,sys; d=json.load(open(sys.argv[1])); print(sys.argv[2], "path answered by", d["source"]); assert sys.argv[2] != "public" or d["source"] == "public"' "$RUNNER_TEMP/upgrade-$source.json" "$source"
+            mails=$(grep -c '^Subject:' "$RUNNER_TEMP/mail.txt")
+            echo "emails after the $source check: $mails (expected 1, from before the upgrade)"
+            [ "$mails" -eq 1 ]
+            [ "$(rows)" = "$before" ] || { echo "::error::stored findings changed"; exit 1; }
+          done
+          unset RUVELO_ADVISORIES_SOURCE
+
       - name: Control panel, with a real login
         working-directory: site
         run: |
@@ -213,6 +251,7 @@ jobs:
           grep -q 'Check now' "$RUNNER_TEMP/utility.html"
           grep -q 'Exploited — patch now' "$RUNNER_TEMP/utility.html" || { echo "::error::no exploited badge"; exit 1; }
           grep -q 'CVE-2025-32432' "$RUNNER_TEMP/utility.html"
+          grep -q 'Data source:' "$RUNNER_TEMP/utility.html" || { echo "::error::the utility does not name the data source"; exit 1; }
 
           echo "--- Check now without a CSRF token is refused"
           status=$(curl -s -c "$jar" -b "$jar" -o /dev/null -w '%{http_code}' -X POST -H 'Accept: application/json' "$BASE_URL/index.php?p=admin/actions/security-alerts/alerts/check")
@@ -235,6 +274,14 @@ jobs:
           status=$(curl -s -L -c "$jar" -b "$jar" -o "$RUNNER_TEMP/settings.html" -w '%{http_code}' "$BASE_URL/admin/settings/plugins/security-alerts")
           [ "$status" = 200 ]
           grep -q 'What leaves this server' "$RUNNER_TEMP/settings.html"
+          grep -q 'Advisory source' "$RUNNER_TEMP/settings.html"
+          grep -q 'Public feeds only' "$RUNNER_TEMP/settings.html"
+
+          echo "--- Public feeds only never contacts Valtry"
+          php craft project-config/set plugins.security-alerts.settings.advisorySource public
+          php craft security-alerts/check --dry-run --json > "$RUNNER_TEMP/optout.json" || [ $? -le 1 ]
+          python3 -I -c 'import json,sys; d=json.load(open(sys.argv[1])); assert d["source"] == "public", d["source"]' "$RUNNER_TEMP/optout.json"
+          php craft project-config/set plugins.security-alerts.settings.advisorySource valtry
 
           echo "--- The fallback queues one job for two visits"
           php craft project-config/set plugins.security-alerts.settings.checkOnCpUse true
